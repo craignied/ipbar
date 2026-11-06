@@ -10,7 +10,6 @@ Its online check gated its lookup, so it never even made the request.
 
 - Local IP comes from SCDynamicStore (`State:/Network/Global/IPv4` →
   PrimaryInterface → its first IPv4 address), refreshed on every path change.
-
 - **The network monitor is a trigger, never a gate.** `NWPathMonitor` and wake
   notifications only schedule a lookup. "Offline" means the HTTP lookup failed.
   Don't add any reachability check that can skip the lookup; that is exactly the
