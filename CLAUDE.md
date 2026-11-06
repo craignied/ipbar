@@ -1,11 +1,15 @@
 # ipbar
 
-Menu bar app showing the public IP and country flag. Replaces the App Store app
+Menu bar app: the menu bar shows the **local** IP (Craig's preference, 2026-11-06);
+the menu shows the external IP + country flag. Replaces the App Store app
 "Display My IP" (Oleg Tsvetkov, v1.8), which Craig removed on 2026-11-06 after it
 got stuck on "Resolving… / You're currently offline" while the network was fine.
 Its online check gated its lookup, so it never even made the request.
 
 ## Design rules
+
+- Local IP comes from SCDynamicStore (`State:/Network/Global/IPv4` →
+  PrimaryInterface → its first IPv4 address), refreshed on every path change.
 
 - **The network monitor is a trigger, never a gate.** `NWPathMonitor` and wake
   notifications only schedule a lookup. "Offline" means the HTTP lookup failed.

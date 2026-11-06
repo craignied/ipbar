@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Network
 import Observation
+import SystemConfiguration
 
 /// Looks up the public IP address and keeps it current.
 ///
@@ -12,6 +13,10 @@ import Observation
 @MainActor
 @Observable
 final class IPModel {
+    /// This Mac's address on the local network (primary interface).
+    private(set) var localIP: String?
+    private(set) var localInterface: String?
+    /// The public address the internet sees.
     private(set) var ip: String?
     private(set) var countryCode: String?
     private(set) var lastChecked: Date?
@@ -34,13 +39,16 @@ final class IPModel {
         refresh()
     }
 
-    /// Menu bar text: flag plus address, or a status word.
-    var label: String {
+    /// Menu bar text: the local address, or a status word.
+    var label: String { localIP ?? "No network" }
+
+    /// Menu text for the public address: flag plus address, or a status word.
+    var externalLabel: String {
         if let ip {
             let flag = countryCode.map(Self.flag) ?? "🌐"
             return failed ? "\(flag) \(ip)?" : "\(flag) \(ip)"
         }
-        return failed ? "Offline" : "IP…"
+        return failed ? "Offline" : "Looking up…"
     }
 
     var countryName: String? {
@@ -48,6 +56,7 @@ final class IPModel {
     }
 
     func refresh() {
+        updateLocalIP()
         guard !busy else { return }
         busy = true
         Task {
@@ -68,10 +77,30 @@ final class IPModel {
         }
     }
 
-    func copyIP() {
-        guard let ip else { return }
+    func copy(_ text: String) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(ip, forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    // MARK: - Local address
+
+    /// Reads the primary interface's IPv4 address. Purely local, no network request,
+    /// so it is updated immediately on every network change.
+    func updateLocalIP() {
+        let (address, interface) = Self.primaryIPv4()
+        localIP = address
+        localInterface = interface
+    }
+
+    private nonisolated static func primaryIPv4() -> (String?, String?) {
+        guard let store = SCDynamicStoreCreate(nil, "ipbar" as CFString, nil, nil),
+              let global = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any],
+              let interface = global["PrimaryInterface"] as? String,
+              let state = SCDynamicStoreCopyValue(store, "State:/Network/Interface/\(interface)/IPv4" as CFString) as? [String: Any],
+              let addresses = state["Addresses"] as? [String],
+              let first = addresses.first
+        else { return (nil, nil) }
+        return (first, interface)
     }
 
     // MARK: - Scheduling
@@ -96,7 +125,10 @@ final class IPModel {
     private func startPathMonitor() {
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] _ in
-            Task { @MainActor in self?.refreshSoon(after: 2) }
+            Task { @MainActor in
+                self?.updateLocalIP()
+                self?.refreshSoon(after: 2)
+            }
         }
         monitor.start(queue: DispatchQueue(label: "ipbar.path"))
         pathMonitor = monitor
